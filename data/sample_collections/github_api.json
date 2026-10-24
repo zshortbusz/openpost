@@ -1,0 +1,59 @@
+{
+  "info": {
+    "_postman_id": "github-prod-suite-002",
+    "name": "GitHub Public REST API Suite",
+    "description": "Production verification collection targeting api.github.com with path variables and rate-limit test assertions.",
+    "schema": "https://schema.postman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {"key": "gh_api", "value": "https://api.github.com", "type": "string"},
+    {"key": "target_owner", "value": "google", "type": "string"},
+    {"key": "target_repo", "value": "gson", "type": "string"}
+  ],
+  "item": [
+    {
+      "name": "Repositories",
+      "item": [
+        {
+          "name": "Get Repository Details",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Repo name matches', function () {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json.name).to.equal('gson');",
+                  "    pm.expect(json.owner.login.toLowerCase()).to.equal('google');",
+                  "});",
+                  "pm.test('Has GitHub rate limit header', function () {",
+                  "    pm.expect(pm.response.headers.get('x-ratelimit-limit')).to.not.be.null;",
+                  "});",
+                  "pm.environment.set('repo_stars', String(pm.response.json().stargazers_count));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {"key": "Accept", "value": "application/vnd.github.v3+json"},
+              {"key": "User-Agent", "value": "OpenPost-Agentic-Client/0.1.0"}
+            ],
+            "url": {
+              "raw": "{{gh_api}}/repos/:owner/:repo",
+              "host": ["{{gh_api}}"],
+              "path": ["repos", ":owner", ":repo"],
+              "variable": [
+                {"key": "owner", "value": "{{target_owner}}"},
+                {"key": "repo", "value": "{{target_repo}}"}
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

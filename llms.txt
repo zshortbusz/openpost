@@ -1,0 +1,17 @@
+# OpenPost
+> Local-First, Offline-Capable, 100% Agent-Operable Postman Alternative.
+
+OpenPost is an open-source clean-room replacement for Postman's legacy Scratch Pad. It stores all collection data locally in Git-friendly flat JSON files using OpenPost's native schema (`https://openpost.dev/schema/v1/collection.json`), persists environments and execution history in SQLite, runs an authentic `pm.*` JavaScript sandbox with Chai assertions, maintains full import and round-trip export interchange with Postman Collection Format v2.1.0 schemas, and exposes 22 Model Context Protocol (MCP) tools for autonomous AI agent operation.
+
+## Documentation Links
+- [Agent Navigation & MCP Tool Catalog](AGENTS.md): Full tool signatures, parameters, and invariants.
+- [Project Overview & Architecture](README.md): Clean-room architecture, design, and setup.
+
+## Key Source Files
+- `backend/mcp_server.py`: FastMCP server exposing 22 core API client tools for collections, requests, runner, and environments.
+- `backend/collection_parser.py`: Ingestion, native schema validation (`https://openpost.dev/schema/v1/collection.json`), and round-trip export for Postman Collection v2.1.0 schemas.
+- `backend/local_db.py`: Zero-cloud persistence layer storing decoupled plain-text collections on disk and history in SQLite.
+- `backend/request_engine.py`: HTTP dispatching with URL path variable (:param) and dynamic variable ({{$guid}}, {{$randomEmail}}) interpolation.
+- `backend/script_sandbox.js`: Node.js sandbox implementing `pm.test`, `pm.expect`, and `pm.response`.
+- `backend/main.py`: FastAPI server providing REST endpoints and hosting the dark-mode WebUI.
+- `desktop/run_desktop.py`: Zero-compile standalone desktop launcher using native Edge/Chromium app mode.

@@ -1,0 +1,232 @@
+{
+  "id": "echo-prod-suite-001",
+  "name": "Postman Echo Real-World Suite",
+  "description": "Production verification collection targeting postman-echo.com with dynamic variables, pre-request scripts, and pm.test assertions.",
+  "schema": "https://openpost.dev/schema/v1/collection.json",
+  "variables": [
+    {
+      "key": "echo_url",
+      "value": "https://postman-echo.com",
+      "type": "string",
+      "disabled": false
+    },
+    {
+      "key": "app_name",
+      "value": "OpenPost",
+      "type": "string",
+      "disabled": false
+    }
+  ],
+  "auth": null,
+  "folders": [
+    {
+      "id": "9cf15e5a-8563-40c4-ac15-58bd25f06139",
+      "name": "Request Methods",
+      "folder_path": [],
+      "description": "HTTP method verification",
+      "auth": null
+    },
+    {
+      "id": "b9cc3789-e4ba-4b52-b4bf-c8cb40d1c0a3",
+      "name": "Authentication & Headers",
+      "folder_path": [],
+      "description": "Auth header validation",
+      "auth": null
+    }
+  ],
+  "requests": [
+    {
+      "id": "bcf46efd-239b-4da6-aa22-399484a2e373",
+      "name": "GET with Query Parameters",
+      "method": "GET",
+      "raw_url": "{{echo_url}}/get?client={{app_name}}&mode=scratchpad",
+      "folder_path": [
+        "Request Methods"
+      ],
+      "headers": [
+        {
+          "key": "Accept",
+          "value": "application/json",
+          "description": "",
+          "disabled": false
+        }
+      ],
+      "query_params": [
+        {
+          "key": "client",
+          "value": "{{app_name}}",
+          "description": "",
+          "disabled": false
+        },
+        {
+          "key": "mode",
+          "value": "scratchpad",
+          "description": "",
+          "disabled": false
+        }
+      ],
+      "path_variables": [],
+      "body": null,
+      "auth": null,
+      "description": "",
+      "events": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 200', function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "pm.test('Query parameters echoed correctly', function () {",
+              "    var json = pm.response.json();",
+              "    pm.expect(json.args.client).to.equal('OpenPost');",
+              "    pm.expect(json.args.mode).to.equal('scratchpad');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "28280c57-bc9f-4670-82c1-783631857633",
+      "name": "POST Raw JSON with Dynamic Variables",
+      "method": "POST",
+      "raw_url": "{{echo_url}}/post",
+      "folder_path": [
+        "Request Methods"
+      ],
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "application/json",
+          "description": "",
+          "disabled": false
+        }
+      ],
+      "query_params": [],
+      "path_variables": [],
+      "body": {
+        "mode": "raw",
+        "disabled": false,
+        "language": "json",
+        "raw": "{\n  \"action\": \"create_order\",\n  \"email\": \"{{$randomEmail}}\",\n  \"trace\": \"{{$guid}}\",\n  \"tx\": \"{{tx_id}}\"\n}"
+      },
+      "auth": null,
+      "description": "",
+      "events": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.environment.set('tx_id', 'tx_' + Math.floor(Math.random() * 100000));"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Successful POST 200', function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "pm.test('JSON payload echoed', function () {",
+              "    var json = pm.response.json();",
+              "    pm.expect(json.data.action).to.equal('create_order');",
+              "    pm.expect(json.data.email).to.include('@example.com');",
+              "});",
+              "pm.environment.set('last_order_tx', pm.environment.get('tx_id'));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "14cf3ede-96d1-4c0f-89ff-60c49c95758a",
+      "name": "POST URL Encoded Form",
+      "method": "POST",
+      "raw_url": "{{echo_url}}/post",
+      "folder_path": [
+        "Request Methods"
+      ],
+      "headers": [],
+      "query_params": [],
+      "path_variables": [],
+      "body": {
+        "mode": "urlencoded",
+        "disabled": false,
+        "language": "json",
+        "urlencoded": [
+          {
+            "key": "framework",
+            "value": "FastAPI",
+            "type": "text",
+            "description": "",
+            "disabled": false
+          },
+          {
+            "key": "agentic",
+            "value": "true",
+            "type": "text",
+            "description": "",
+            "disabled": false
+          }
+        ]
+      },
+      "auth": null,
+      "description": "",
+      "events": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+              "pm.test('Form data echoed', function () {",
+              "    var json = pm.response.json();",
+              "    pm.expect(json.form.framework).to.equal('FastAPI');",
+              "    pm.expect(json.form.agentic).to.equal('true');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "497c209f-3264-4a0f-bbb5-d3e19c12c2f8",
+      "name": "Basic Auth Challenge",
+      "method": "GET",
+      "raw_url": "{{echo_url}}/basic-auth",
+      "folder_path": [
+        "Authentication & Headers"
+      ],
+      "headers": [],
+      "query_params": [],
+      "path_variables": [],
+      "body": null,
+      "auth": {
+        "type": "basic",
+        "params": {
+          "username": "postman",
+          "password": "password"
+        }
+      },
+      "description": "",
+      "events": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Authenticated status 200', () => pm.response.to.have.status(200));",
+              "pm.test('Echo confirms auth', () => pm.expect(pm.response.json().authenticated).to.be.true);"
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "raw_events": []
+}

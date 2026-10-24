@@ -1,0 +1,16 @@
+{
+  "name": "openpost",
+  "version": "0.1.0",
+  "description": "Clean-room, local-first, agent-operable API testing client.",
+  "private": true,
+  "scripts": {
+    "tauri": "tauri",
+    "desktop:dev": "tauri dev",
+    "desktop:build": "tauri build",
+    "desktop:launch": "python desktop/run_desktop.py",
+    "desktop:check": "python desktop/run_desktop.py --check"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.12.4"
+  }
+}

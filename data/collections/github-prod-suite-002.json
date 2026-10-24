@@ -1,0 +1,98 @@
+{
+  "id": "github-prod-suite-002",
+  "name": "GitHub Public REST API Suite",
+  "description": "Production verification collection targeting api.github.com with path variables and rate-limit test assertions.",
+  "schema": "https://openpost.dev/schema/v1/collection.json",
+  "variables": [
+    {
+      "key": "gh_api",
+      "value": "https://api.github.com",
+      "type": "string",
+      "disabled": false
+    },
+    {
+      "key": "target_owner",
+      "value": "google",
+      "type": "string",
+      "disabled": false
+    },
+    {
+      "key": "target_repo",
+      "value": "gson",
+      "type": "string",
+      "disabled": false
+    }
+  ],
+  "auth": null,
+  "folders": [
+    {
+      "id": "0e5c601a-a757-4a06-804f-609a614d6280",
+      "name": "Repositories",
+      "folder_path": [],
+      "description": "",
+      "auth": null
+    }
+  ],
+  "requests": [
+    {
+      "id": "e8ac9b39-4ed6-4045-ae57-b82c41ae039d",
+      "name": "Get Repository Details",
+      "method": "GET",
+      "raw_url": "{{gh_api}}/repos/:owner/:repo",
+      "folder_path": [
+        "Repositories"
+      ],
+      "headers": [
+        {
+          "key": "Accept",
+          "value": "application/vnd.github.v3+json",
+          "description": "",
+          "disabled": false
+        },
+        {
+          "key": "User-Agent",
+          "value": "OpenPost-Agentic-Client/0.1.0",
+          "description": "",
+          "disabled": false
+        }
+      ],
+      "query_params": [],
+      "path_variables": [
+        {
+          "key": "owner",
+          "value": "{{target_owner}}",
+          "description": ""
+        },
+        {
+          "key": "repo",
+          "value": "{{target_repo}}",
+          "description": ""
+        }
+      ],
+      "body": null,
+      "auth": null,
+      "description": "",
+      "events": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status code is 200', () => pm.response.to.have.status(200));",
+              "pm.test('Repo name matches', function () {",
+              "    var json = pm.response.json();",
+              "    pm.expect(json.name).to.equal('gson');",
+              "    pm.expect(json.owner.login.toLowerCase()).to.equal('google');",
+              "});",
+              "pm.test('Has GitHub rate limit header', function () {",
+              "    pm.expect(pm.response.headers.get('x-ratelimit-limit')).to.not.be.null;",
+              "});",
+              "pm.environment.set('repo_stars', String(pm.response.json().stargazers_count));"
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "raw_events": []
+}
