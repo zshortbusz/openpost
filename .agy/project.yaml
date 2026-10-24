@@ -1,0 +1,17 @@
+name: openpost
+version: 0.1.0
+description: "Local-first, offline-capable, 100% agent-operable Postman Scratch Pad alternative."
+architecture:
+  backend:
+    language: python
+    min_version: "3.10"
+    framework: fastapi
+    mcp_server: "backend/mcp_server.py"
+    http_client: httpx
+  frontend:
+    type: vanilla-web
+    entry: "frontend/index.html"
+  storage:
+    history_and_environments: "data/openpost.db"
+    collections_dir: "data/collections"
+

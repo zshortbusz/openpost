@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OpenPost — Local-First Agentic API Client</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-badge">OP</span>
+      <span class="brand-title">OpenPost</span>
+      <span class="brand-pill">Clean-Room Scratch Pad + MCP</span>
+    </div>
+    <div class="topbar-actions">
+      <div class="env-selector-wrap">
+        <label for="envSelect">Environment:</label>
+        <select id="envSelect">
+          <option value="">No Environment</option>
+        </select>
+        <button id="manageEnvBtn" class="btn btn-secondary btn-sm" title="Add/Edit Environment">+ Env</button>
+      </div>
+      <button id="importBtn" class="btn btn-secondary btn-sm">Import v2.1.0 JSON</button>
+      <input type="file" id="importFileInput" accept=".json" style="display: none;" />
+      <span id="sandboxBadge" class="status-pill" title="Clean-Room Local Mode">Clean-Room: 100% Local</span>
+    </div>
+  </header>
+
+  <main class="workspace">
+    <!-- Left Sidebar: Collections & History -->
+    <aside class="sidebar">
+      <div class="sidebar-tabs">
+        <button class="sidebar-tab active" data-sidebar="collections">Collections</button>
+        <button class="sidebar-tab" data-sidebar="history">History</button>
+      </div>
+
+      <div id="collectionsPane" class="sidebar-pane active">
+        <div class="sidebar-toolbar">
+          <button id="newCollectionBtn" class="btn btn-secondary btn-xs">+ Collection</button>
+          <button id="saveRequestBtn" class="btn btn-secondary btn-xs" title="Save current request (Ctrl+S)">Save Request</button>
+        </div>
+        <div id="collectionsList" class="tree-list"></div>
+      </div>
+
+      <div id="historyPane" class="sidebar-pane">
+        <div class="sidebar-toolbar">
+          <button id="clearHistoryBtn" class="btn btn-secondary btn-xs">Clear History</button>
+        </div>
+        <div id="historyList" class="tree-list"></div>
+      </div>
+    </aside>
+
+    <!-- Main Request & Response Area -->
+    <section class="editor-area">
+      <!-- Request Bar -->
+      <div class="request-bar">
+        <select id="methodSelect" class="method-select">
+          <option value="GET">GET</option>
+          <option value="POST">POST</option>
+          <option value="PUT">PUT</option>
+          <option value="PATCH">PATCH</option>
+          <option value="DELETE">DELETE</option>
+          <option value="HEAD">HEAD</option>
+          <option value="OPTIONS">OPTIONS</option>
+        </select>
+        <input
+          type="text"
+          id="urlInput"
+          class="url-input"
+          placeholder="https://httpbin.org/get or {{base_url}}/users"
+          value="https://httpbin.org/get"
+        />
+        <button id="previewBtn" class="btn btn-secondary" title="Preview {{variable}} interpolation">Interpolate</button>
+        <button id="sendBtn" class="btn btn-primary">Send</button>
+      </div>
+
+      <!-- Request Configuration Tabs -->
+      <div class="req-config">
+        <div class="tabs-bar">
+          <button class="tab-btn active" data-tab="paramsTab">Query Params</button>
+          <button class="tab-btn" data-tab="headersTab">Headers</button>
+          <button class="tab-btn" data-tab="bodyTab">Body (JSON / Raw)</button>
+          <button class="tab-btn" data-tab="authTab">Auth</button>
+          <span id="activeReqLabel" class="active-req-label">Scratch Pad (Unsaved)</span>
+        </div>
+
+        <div id="paramsTab" class="tab-content active">
+          <textarea id="paramsInput" class="code-textarea" placeholder='[{"key": "page", "value": "1"}]'>[]</textarea>
+        </div>
+        <div id="headersTab" class="tab-content">
+          <textarea id="headersInput" class="code-textarea" placeholder='[{"key": "Accept", "value": "application/json"}]'>[{"key": "Accept", "value": "application/json"}]</textarea>
+        </div>
+        <div id="bodyTab" class="tab-content">
+          <textarea id="bodyInput" class="code-textarea" placeholder='{"hello": "{{world}}"}'></textarea>
+        </div>
+        <div id="authTab" class="tab-content">
+          <div class="auth-row">
+            <label for="authTypeSelect">Auth Type:</label>
+            <select id="authTypeSelect">
+              <option value="noauth">No Auth</option>
+              <option value="bearer">Bearer Token</option>
+              <option value="basic">Basic Auth</option>
+              <option value="apikey">API Key</option>
+            </select>
+            <input type="text" id="authTokenInput" class="url-input" placeholder="Token / Value (supports {{api_token}})" />
+          </div>
+        </div>
+      </div>
+
+      <!-- Response Inspector -->
+      <div class="response-panel">
+        <div class="response-header">
+          <span class="panel-title">Response</span>
+          <div id="responseMeta" class="response-meta">
+            <span class="meta-badge" id="statusBadge">Ready</span>
+            <span class="meta-item" id="latencyBadge">— ms</span>
+            <span class="meta-item" id="sizeBadge">— B</span>
+          </div>
+        </div>
+        <pre id="responseOutput" class="response-output">Hit "Send" or use an MCP tool to dispatch a request.</pre>
+      </div>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

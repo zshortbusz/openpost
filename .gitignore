@@ -1,0 +1,43 @@
+# Python & Virtual Environments
+.venv/
+venv/
+ENV/
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+
+# Testing & Cache
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local OpenPost Databases & Session State
+data/*.db
+data/*.sqlite
+data/desktop_profile/
+
+# Binaries & Archives
+*.asar
+*.nupkg
+*.exe
+*.msi
+
+# Tauri & Rust Build Artifacts
+src-tauri/target/
+target/
+.cargo/
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS Artifacts
+Thumbs.db
+Desktop.ini
+.DS_Store
+*.bak
