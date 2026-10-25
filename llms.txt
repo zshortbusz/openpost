@@ -6,6 +6,7 @@ OpenPost is an open-source clean-room replacement for Postman's legacy Scratch P
 ## Documentation Links
 - [Agent Navigation & MCP Tool Catalog](AGENTS.md): Full tool signatures, parameters, and invariants.
 - [Project Overview & Architecture](README.md): Clean-room architecture, design, and setup.
+- [Changelog](CHANGELOG.md): Release notes and security/bugfix history.
 
 ## Key Source Files
 - `backend/mcp_server.py`: FastMCP server exposing 22 core API client tools for collections, requests, runner, and environments.

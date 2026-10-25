@@ -59,43 +59,41 @@ OpenPost was engineered from the ground up as a **strict clean-room implementati
 ```mermaid
 flowchart TB
     subgraph Clients["Clients and Autonomous Agents"]
-        Agent["AI Agents<br/>(Antigravity / Claude / Cursor)"]
-        UI["Dark-Mode WebUI<br/>(Linear / Postman Style)"]
-        Desktop["Desktop Application<br/>(Tauri v2 / WebView2)"]
+        Agent["AI Agents (Antigravity / Claude / Cursor)"]
+        UI["Dark-Mode WebUI (Linear / Scratch Pad Style)"]
+        Desktop["Desktop Application (Tauri v2 / WebView2)"]
     end
 
     subgraph OpenPost["OpenPost Core Engine"]
-        MCP["Model Context Protocol Server<br/>(backend/mcp_server.py - 22 Tools)"]
-        API["FastAPI REST Server<br/>(backend/main.py)"]
+        MCP["Model Context Protocol Server (backend/mcp_server.py - 22 Tools)"]
+        API["FastAPI REST Server (backend/main.py)"]
         
-        Parser["OpenPost & Postman v2.1.0 Parser<br/>(backend/collection_parser.py)"]
-        Engine["HTTP Dispatcher and Var Engine<br/>(backend/request_engine.py)"]
-        Sandbox["Node.js pm.* Script Sandbox<br/>(backend/script_sandbox.js)"]
-        Store["Local Persistence Layer<br/>(backend/local_db.py)"]
+        Parser["OpenPost and Postman v2.1.0 Parser (backend/collection_parser.py)"]
+        Engine["HTTP Dispatcher and Var Engine (backend/request_engine.py)"]
+        Runner["Script Bridge (backend/script_runner.py)"]
+        Sandbox["Node.js pm.* Script Sandbox (backend/script_sandbox.js)"]
+        Store["Local Persistence Layer (backend/local_db.py)"]
     end
 
     subgraph Storage["Zero-Cloud Local Storage"]
-        JSONFiles["Flat JSON Collections (OpenPost Native Schema v1)<br/>(data/collections/*.json)"]
-        SQLiteDB["SQLite Database<br/>(data/openpost.db)"]
+        JSONFiles["Flat JSON Collections (data/collections/*.json)"]
+        SQLiteDB["SQLite Database (data/openpost.db)"]
     end
 
     Agent <-->|"MCP Protocol (stdio/HTTP)"| MCP
     UI <-->|"REST API"| API
     Desktop <-->|"Localhost / IPC"| API
 
+    API --> MCP
     MCP --> Parser
     MCP --> Engine
     MCP --> Store
-    MCP --> Sandbox
+    MCP --> Runner
+    Runner --> Sandbox
 
-    API --> Parser
-    API --> Engine
-    API --> Store
-    API --> Sandbox
-
-    Parser <--> JSONFiles
+    Store --> Parser
+    Store <--> JSONFiles
     Store <--> SQLiteDB
-    Engine --> Sandbox
 ```
 
 ---
@@ -213,7 +211,8 @@ pytest -v
 
 ---
 
-## 📄 License
+## 📄 License & Changelog
 
-OpenPost is released under the [MIT License](LICENSE).
-Postman is a registered trademark of Postman, Inc. OpenPost is an independent clean-room open-source project and is not affiliated with, endorsed by, or associated with Postman, Inc.
+* See [CHANGELOG.md](CHANGELOG.md) for version history and recent fixes.
+* OpenPost is released under the [MIT License](LICENSE).
+* Postman is a registered trademark of Postman, Inc. OpenPost is an independent clean-room open-source project and is not affiliated with, endorsed by, or associated with Postman, Inc.

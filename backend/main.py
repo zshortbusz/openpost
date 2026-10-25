@@ -11,11 +11,25 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from backend import mcp_server
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+FRONTEND_DIR = PROJECT_ROOT / "frontend"
+
+ALLOWED_ORIGINS = [
+    "http://127.0.0.1:8000",
+    "http://localhost:8000",
+    "http://127.0.0.1",
+    "http://localhost",
+    "tauri://localhost",
+    "http://tauri.localhost",
+    "https://tauri.localhost",
+]
 
 app = FastAPI(
     title="OpenPost Local API & Agentic Engine",
@@ -24,13 +38,17 @@ app = FastAPI(
 )
 
 app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    TrustedHostMiddleware,
+    allowed_hosts=["127.0.0.1", "localhost", "tauri.localhost", "testserver"],
 )
 
-FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_origin_regex=r"^https?://(127\.0\.0\.1|localhost)(:\d+)?$",
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "Accept"],
+)
 
 
 # ---------------------------------------------------------------------------
@@ -129,6 +147,17 @@ def api_create_collection(payload: CreateCollectionPayload) -> dict[str, Any]:
 @app.post("/api/collections/import")
 def api_import_collection(payload: ImportCollectionPayload) -> dict[str, Any]:
     try:
+        if payload.file_path is not None:
+            resolved_path = Path(payload.file_path).resolve()
+            store_dir = mcp_server.get_store().base_dir.resolve()
+            if (
+                resolved_path.suffix.lower() != ".json"
+                or (
+                    not resolved_path.is_relative_to(PROJECT_ROOT)
+                    and not resolved_path.is_relative_to(store_dir)
+                )
+            ):
+                raise ValueError("HTTP file_path imports must point to a .json file inside the OpenPost workspace.")
         return mcp_server.import_postman_collection(
             file_path=payload.file_path,
             collection_json=payload.collection_json,
@@ -230,13 +259,26 @@ def api_interpolate_preview(payload: SendRequestPayload) -> dict[str, Any]:
 @app.post("/api/requests/send")
 async def api_send_request(payload: SendRequestPayload) -> dict[str, Any]:
     if payload.collection_id and payload.request_id:
-        return await mcp_server.run_collection_request(
-            collection_id=payload.collection_id,
-            request_id=payload.request_id,
-            environment_id=payload.environment_id,
-            override_variables=payload.override_variables,
-            timeout_seconds=payload.timeout_seconds,
-        )
+        try:
+            overrides: dict[str, Any] = {
+                "method": payload.method,
+                "raw_url": payload.raw_url,
+                "headers": payload.headers,
+                "query_params": payload.query_params,
+                "body": payload.body,
+            }
+            if payload.auth and payload.auth.get("type", "noauth") != "noauth":
+                overrides["auth"] = payload.auth
+            return await mcp_server.run_collection_request(
+                collection_id=payload.collection_id,
+                request_id=payload.request_id,
+                environment_id=payload.environment_id,
+                override_variables=payload.override_variables,
+                timeout_seconds=payload.timeout_seconds,
+                request_overrides=overrides,
+            )
+        except KeyError:
+            pass
     return await mcp_server.send_request(
         method=payload.method,
         raw_url=payload.raw_url,
@@ -244,6 +286,7 @@ async def api_send_request(payload: SendRequestPayload) -> dict[str, Any]:
         query_params=payload.query_params,
         body=payload.body,
         auth=payload.auth,
+        collection_id=payload.collection_id,
         environment_id=payload.environment_id,
         override_variables=payload.override_variables,
         timeout_seconds=payload.timeout_seconds,

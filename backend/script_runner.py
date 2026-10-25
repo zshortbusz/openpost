@@ -40,6 +40,19 @@ def extract_scripts_from_events(
     return scripts
 
 
+def _slim_response_for_sandbox(response: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Pass only the response fields needed by `pm.response` to avoid duplicating large JSON bodies over IPC."""
+    if not response or not isinstance(response, dict):
+        return None
+    return {
+        "status_code": response.get("status_code"),
+        "status_text": response.get("status_text") or response.get("reason_phrase") or "",
+        "elapsed_ms": response.get("elapsed_ms", 0),
+        "headers": response.get("headers") or {},
+        "body_text": response.get("body_text") or "",
+    }
+
+
 async def run_postman_script_async(
     script: str,
     listen: str = "test",
@@ -66,7 +79,7 @@ async def run_postman_script_async(
         "script": script,
         "listen": listen,
         "request": request or {},
-        "response": response,
+        "response": _slim_response_for_sandbox(response),
         "environment": environment or {},
         "collection_variables": collection_variables or {},
         "globals": globals_dict or {},
@@ -148,7 +161,7 @@ def run_postman_script_sync(
         "script": script,
         "listen": listen,
         "request": request or {},
-        "response": response,
+        "response": _slim_response_for_sandbox(response),
         "environment": environment or {},
         "collection_variables": collection_variables or {},
         "globals": globals_dict or {},
