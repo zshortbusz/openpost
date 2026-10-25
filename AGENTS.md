@@ -39,7 +39,7 @@ When working in this repository, use these commands:
 
 ### Running Tests
 ```bash
-# Run the complete test suite (25 unit, integration, and packaging tests):
+# Run the complete test suite (30 unit, integration, security, and packaging tests):
 pytest -v
 
 # Or within the virtual environment:
@@ -118,7 +118,7 @@ The script engine runs inside Node.js (`backend/script_sandbox.js`) and supports
 - `pm.response.to.have.status(code)`
 - `pm.response.to.be.success / clientError / serverError`
 - `pm.test("name", function () { ... })`
-- `pm.expect(actual).to.equal(expected) / to.eql(expected) / to.include() / to.be.true`
+- `pm.expect(actual).to.equal(expected) / to.eql(expected) / to.include() / to.be.true / to.be.false / to.be.null / to.be.undefined / to.be.ok`
 
 ---
 

@@ -138,6 +138,15 @@ def test_desktop_fastapi_frontend_serving() -> None:
     assert res_root_js.status_code == 200
     assert "API_BASE" in res_root_js.text
 
+    # 6. Ensure frontend/ and frontend/static/ copies remain strictly in sync
+    frontend_dir = PROJECT_ROOT / "frontend"
+    assert (frontend_dir / "app.js").read_text(encoding="utf-8") == (
+        frontend_dir / "static" / "app.js"
+    ).read_text(encoding="utf-8"), "frontend/app.js and frontend/static/app.js are out of sync"
+    assert (frontend_dir / "styles.css").read_text(encoding="utf-8") == (
+        frontend_dir / "static" / "styles.css"
+    ).read_text(encoding="utf-8"), "frontend/styles.css and frontend/static/styles.css are out of sync"
+
 
 def test_desktop_launcher_fallback_when_no_browser(monkeypatch: pytest.MonkeyPatch) -> None:
     from desktop import run_desktop

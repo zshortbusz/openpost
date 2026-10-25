@@ -40,22 +40,73 @@ function parseJsonSafe(text, fallback) {
 function buildCurrentAuth() {
   const type = document.getElementById("authTypeSelect").value;
   const val = document.getElementById("authTokenInput").value.trim();
-  if (type === "noauth" || !val) return { type: "noauth", params: {} };
+  if (type === "noauth" || !val) return null;
   if (type === "bearer") return { type: "bearer", params: { token: val } };
   if (type === "apikey") return { type: "apikey", params: { key: "X-API-Key", value: val, in: "header" } };
   if (type === "basic") {
-    const [username, password = ""] = val.split(":");
+    const colonIdx = val.indexOf(":");
+    const username = colonIdx >= 0 ? val.slice(0, colonIdx) : val;
+    const password = colonIdx >= 0 ? val.slice(colonIdx + 1) : "";
     return { type: "basic", params: { username, password } };
   }
   return null;
 }
 
+function populateAuthFields(auth) {
+  const typeSelect = document.getElementById("authTypeSelect");
+  const tokenInput = document.getElementById("authTokenInput");
+  if (!auth || !auth.type || auth.type === "noauth") {
+    typeSelect.value = "noauth";
+    tokenInput.value = "";
+    return;
+  }
+  const type = auth.type.toLowerCase();
+  const params = auth.params || {};
+  if (type === "bearer") {
+    typeSelect.value = "bearer";
+    tokenInput.value = params.token || "";
+  } else if (type === "apikey") {
+    typeSelect.value = "apikey";
+    tokenInput.value = params.value || "";
+  } else if (type === "basic") {
+    typeSelect.value = "basic";
+    const u = params.username || "";
+    const p = params.password || "";
+    tokenInput.value = u || p ? `${u}:${p}` : "";
+  } else {
+    typeSelect.value = "noauth";
+    tokenInput.value = "";
+  }
+}
+
+function buildCurrentBody() {
+  const rawBody = document.getElementById("bodyInput").value;
+  if (!rawBody.trim()) return null;
+  const parsed = parseJsonSafe(rawBody, null);
+  if (
+    parsed &&
+    typeof parsed === "object" &&
+    !Array.isArray(parsed) &&
+    typeof parsed.mode === "string" &&
+    ["raw", "urlencoded", "formdata", "graphql", "file"].includes(parsed.mode)
+  ) {
+    return parsed;
+  }
+  return { mode: "raw", raw: rawBody, language: "json" };
+}
+
 async function refreshSandboxStatus() {
   const badge = document.getElementById("sandboxBadge");
-  if (badge) {
+  if (!badge) return;
+  try {
+    await api("/api/health");
     badge.textContent = "Clean-Room: 100% Local";
     badge.style.borderColor = "#10b981";
     badge.style.color = "#10b981";
+  } catch {
+    badge.textContent = "Backend Offline";
+    badge.style.borderColor = "#ef4444";
+    badge.style.color = "#ef4444";
   }
 }
 
@@ -88,9 +139,15 @@ async function loadCollections() {
     const header = document.createElement("div");
     header.className = "tree-item";
     header.style.fontWeight = "600";
-    header.innerHTML = `<span>📁 ${colDetail.name}</span><span style="color:#8b95a7">${colDetail.requests.length}</span>`;
+    const titleSpan = document.createElement("span");
+    titleSpan.textContent = `📁 ${colDetail.name}`;
+    const countSpan = document.createElement("span");
+    countSpan.style.color = "#8b95a7";
+    countSpan.textContent = String(colDetail.requests.length);
+    header.append(titleSpan, countSpan);
     header.onclick = () => {
       state.activeCollectionId = colDetail.id;
+      state.activeRequestId = null;
       document.getElementById("activeReqLabel").textContent = `Collection: ${colDetail.name}`;
     };
     container.appendChild(header);
@@ -100,12 +157,13 @@ async function loadCollections() {
       item.className = "tree-item";
       item.style.paddingLeft = "22px";
       const folderPrefix = req.folder_path && req.folder_path.length ? `${req.folder_path.join("/")}/ ` : "";
-      item.innerHTML = `
-        <span>
-          <span class="method-tag method-${req.method}">${req.method}</span>
-          ${folderPrefix}${req.name}
-        </span>
-      `;
+      const wrapSpan = document.createElement("span");
+      const methodTag = document.createElement("span");
+      methodTag.className = `method-tag method-${req.method}`;
+      methodTag.textContent = req.method;
+      wrapSpan.appendChild(methodTag);
+      wrapSpan.appendChild(document.createTextNode(`${folderPrefix}${req.name}`));
+      item.appendChild(wrapSpan);
       item.onclick = () => selectSavedRequest(colDetail.id, req);
       container.appendChild(item);
     }
@@ -119,7 +177,14 @@ function selectSavedRequest(collectionId, req) {
   document.getElementById("urlInput").value = req.raw_url || "";
   document.getElementById("paramsInput").value = JSON.stringify(req.query_params || [], null, 2);
   document.getElementById("headersInput").value = JSON.stringify(req.headers || [], null, 2);
-  document.getElementById("bodyInput").value = req.body && req.body.raw ? req.body.raw : "";
+  if (!req.body) {
+    document.getElementById("bodyInput").value = "";
+  } else if (req.body.mode === "raw" || req.body.raw !== undefined) {
+    document.getElementById("bodyInput").value = req.body.raw || "";
+  } else {
+    document.getElementById("bodyInput").value = JSON.stringify(req.body, null, 2);
+  }
+  populateAuthFields(req.auth);
   document.getElementById("activeReqLabel").textContent = `${req.name} (${req.id.slice(0, 8)})`;
 }
 
@@ -130,10 +195,16 @@ async function loadHistory() {
   for (const h of history) {
     const item = document.createElement("div");
     item.className = "tree-item";
-    item.innerHTML = `
-      <span><span class="method-tag method-${h.method}">${h.method}</span>${h.url.slice(0, 28)}</span>
-      <span style="color:#8b95a7">${h.status_code}</span>
-    `;
+    const leftSpan = document.createElement("span");
+    const methodTag = document.createElement("span");
+    methodTag.className = `method-tag method-${h.method}`;
+    methodTag.textContent = h.method;
+    leftSpan.appendChild(methodTag);
+    leftSpan.appendChild(document.createTextNode(h.url.slice(0, 28)));
+    const statusSpan = document.createElement("span");
+    statusSpan.style.color = "#8b95a7";
+    statusSpan.textContent = String(h.status_code);
+    item.append(leftSpan, statusSpan);
     item.onclick = async () => {
       const detail = await api(`/api/history/${h.id}`);
       document.getElementById("methodSelect").value = detail.method;
@@ -152,40 +223,45 @@ async function sendCurrentRequest(previewOnly = false) {
   const raw_url = document.getElementById("urlInput").value.trim();
   const query_params = parseJsonSafe(document.getElementById("paramsInput").value, []);
   const headers = parseJsonSafe(document.getElementById("headersInput").value, []);
-  const rawBody = document.getElementById("bodyInput").value;
-  const body = rawBody.trim() ? { mode: "raw", raw: rawBody, language: "json" } : null;
+  const body = buildCurrentBody();
   const auth = buildCurrentAuth();
   const environment_id = document.getElementById("envSelect").value || null;
 
   const endpoint = previewOnly ? "/api/requests/interpolate" : "/api/requests/send";
   document.getElementById("statusBadge").textContent = previewOnly ? "Interpolating..." : "Sending...";
 
-  const res = await api(endpoint, {
-    method: "POST",
-    body: JSON.stringify({
-      method,
-      raw_url,
-      query_params,
-      headers,
-      body,
-      auth,
-      collection_id: state.activeCollectionId,
-      environment_id,
-    }),
-  });
+  try {
+    const res = await api(endpoint, {
+      method: "POST",
+      body: JSON.stringify({
+        method,
+        raw_url,
+        query_params,
+        headers,
+        body,
+        auth,
+        collection_id: state.activeCollectionId,
+        request_id: state.activeRequestId,
+        environment_id,
+      }),
+    });
 
-  if (previewOnly) {
-    document.getElementById("statusBadge").textContent = "Interpolated Preview";
-    document.getElementById("responseOutput").textContent = JSON.stringify(res, null, 2);
-    return;
+    if (previewOnly) {
+      document.getElementById("statusBadge").textContent = "Interpolated Preview";
+      document.getElementById("responseOutput").textContent = JSON.stringify(res, null, 2);
+      return;
+    }
+
+    document.getElementById("statusBadge").textContent = `${res.status_code} ${res.reason_phrase || ""}`;
+    document.getElementById("latencyBadge").textContent = `${res.elapsed_ms} ms`;
+    document.getElementById("sizeBadge").textContent = `${res.size_bytes} B`;
+    document.getElementById("responseOutput").textContent =
+      res.body_json ? JSON.stringify(res.body_json, null, 2) : (res.body_text || res.error || "");
+    await loadHistory();
+  } catch (err) {
+    document.getElementById("statusBadge").textContent = "Request Error";
+    document.getElementById("responseOutput").textContent = err && err.message ? err.message : String(err);
   }
-
-  document.getElementById("statusBadge").textContent = `${res.status_code} ${res.reason_phrase || ""}`;
-  document.getElementById("latencyBadge").textContent = `${res.elapsed_ms} ms`;
-  document.getElementById("sizeBadge").textContent = `${res.size_bytes} B`;
-  document.getElementById("responseOutput").textContent =
-    res.body_json ? JSON.stringify(res.body_json, null, 2) : (res.body_text || res.error || "");
-  await loadHistory();
 }
 
 function wireEvents() {
@@ -217,12 +293,19 @@ function wireEvents() {
   document.getElementById("importFileInput").onchange = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    const text = await file.text();
-    await api("/api/collections/import", {
-      method: "POST",
-      body: JSON.stringify({ collection_json: JSON.parse(text) }),
-    });
-    await loadCollections();
+    try {
+      const text = await file.text();
+      await api("/api/collections/import", {
+        method: "POST",
+        body: JSON.stringify({ collection_json: JSON.parse(text) }),
+      });
+      await loadCollections();
+    } catch (err) {
+      document.getElementById("statusBadge").textContent = "Import Error";
+      document.getElementById("responseOutput").textContent = err && err.message ? err.message : String(err);
+    } finally {
+      e.target.value = "";
+    }
   };
 
   document.getElementById("newCollectionBtn").onclick = async () => {
@@ -233,6 +316,7 @@ function wireEvents() {
       body: JSON.stringify({ name }),
     });
     state.activeCollectionId = created.id;
+    state.activeRequestId = null;
     await loadCollections();
   };
 
@@ -246,7 +330,6 @@ function wireEvents() {
     }
     const name = prompt("Request Name:", "Saved Request");
     if (!name) return;
-    const rawBody = document.getElementById("bodyInput").value;
     await api(`/api/collections/${state.activeCollectionId}/requests`, {
       method: "POST",
       body: JSON.stringify({
@@ -256,7 +339,7 @@ function wireEvents() {
         raw_url: document.getElementById("urlInput").value.trim(),
         query_params: parseJsonSafe(document.getElementById("paramsInput").value, []),
         headers: parseJsonSafe(document.getElementById("headersInput").value, []),
-        body: rawBody.trim() ? { mode: "raw", raw: rawBody, language: "json" } : null,
+        body: buildCurrentBody(),
         auth: buildCurrentAuth(),
       }),
     });
@@ -271,12 +354,18 @@ function wireEvents() {
       '{"base_url": "https://httpbin.org"}'
     );
     if (!rawVars) return;
-    const env = await api("/api/environments", {
-      method: "POST",
-      body: JSON.stringify({ name, variables: JSON.parse(rawVars) }),
-    });
-    await loadEnvironments();
-    document.getElementById("envSelect").value = env.id;
+    try {
+      const parsedVars = JSON.parse(rawVars);
+      const env = await api("/api/environments", {
+        method: "POST",
+        body: JSON.stringify({ name, variables: parsedVars }),
+      });
+      await loadEnvironments();
+      document.getElementById("envSelect").value = env.id;
+    } catch (err) {
+      document.getElementById("statusBadge").textContent = "Environment Error";
+      document.getElementById("responseOutput").textContent = err && err.message ? err.message : String(err);
+    }
   };
 
   document.getElementById("clearHistoryBtn").onclick = async () => {
@@ -294,10 +383,14 @@ function wireEvents() {
 
 (async function init() {
   wireEvents();
-  await Promise.all([
-    refreshSandboxStatus(),
-    loadEnvironments(),
-    loadCollections(),
-    loadHistory(),
-  ]);
+  try {
+    await Promise.all([
+      refreshSandboxStatus(),
+      loadEnvironments(),
+      loadCollections(),
+      loadHistory(),
+    ]);
+  } catch {
+    // Handled by refreshSandboxStatus
+  }
 })();

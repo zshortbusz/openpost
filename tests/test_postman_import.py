@@ -723,6 +723,194 @@ def test_upsert_request_preserves_scripts_and_path_variables(isolated_store: Loc
     assert updated["path_variables"][0]["key"] == "uid"
 
 
+@pytest.mark.asyncio
+async def test_chai_property_assertions_and_unset_persistence(isolated_store: LocalStore) -> None:
+    """Verify pm.expect().to.be.true/false/null property getters and pm.environment.unset()."""
+    from backend.script_runner import run_postman_script_async
+
+    script = """
+    pm.test("Property getter assertions work", function () {
+        pm.expect(true).to.be.true;
+        pm.expect(false).to.be.false;
+        pm.expect(null).to.be.null;
+        pm.expect(false).to.not.be.true;
+    });
+    pm.test("False property assertion fails when actual is false", function () {
+        pm.expect(false).to.be.true;
+    });
+    pm.environment.unset("remove_me");
+    """
+    res = await run_postman_script_async(
+        script=script,
+        listen="test",
+        environment={"remove_me": "123", "keep_me": "456"},
+    )
+    assert res["ok"] is True
+    assert res["test_results"][0]["passed"] is True
+    assert res["test_results"][1]["passed"] is False
+    assert "remove_me" not in res["updated_environment"]
+    assert res["updated_environment"]["keep_me"] == "456"
+
+
+def test_inline_query_params_and_graphql_variables_serialization() -> None:
+    """Verify inline URL query params are merged with explicit query_params and GraphQL variables parse to dict."""
+    prep = prepare_http_request(
+        method="POST",
+        raw_url="https://api.example.com/graphql?inline=1#section",
+        query_params=[{"key": "explicit", "value": "2"}],
+        body={
+            "mode": "graphql",
+            "graphql": {
+                "query": "query GetUser($id: ID!) { user(id: $id) { name } }",
+                "variables": '{"id": "{{user_id}}"}',
+            },
+        },
+        variables={"user_id": "u_42"},
+    )
+    assert prep["url"] == "https://api.example.com/graphql#section"
+    assert prep["params"] == [("inline", "1"), ("explicit", "2")]
+    body_json = json.loads(prep["content"])
+    assert body_json["variables"] == {"id": "u_42"}
+
+
+@pytest.mark.asyncio
+async def test_sandbox_isolation_and_response_status_phrase() -> None:
+    """Verify VM sandbox blocks access to process/require/eval/Function and maps reason_phrase to pm.response.status."""
+    from backend.script_runner import run_postman_script_async
+
+    script = """
+    pm.test("pm.response.status is populated from reason_phrase", function () {
+        pm.expect(pm.response.status).to.equal("Created");
+    });
+    pm.test("Node globals are isolated", function () {
+        pm.expect(typeof process).to.equal("undefined");
+        pm.expect(typeof require).to.equal("undefined");
+        pm.expect(typeof fetch).to.equal("undefined");
+    });
+    pm.test("Dynamic code generation via constructor traversal is blocked", function () {
+        var escaped = false;
+        try {
+            var fn = pm.expect(1).constructor.constructor("return typeof process");
+            if (fn() !== "undefined") {
+                escaped = true;
+            }
+        } catch (e) {
+            escaped = false;
+        }
+        pm.expect(escaped).to.be.false;
+    });
+    """
+    res = await run_postman_script_async(
+        script=script,
+        listen="test",
+        response={"status_code": 201, "reason_phrase": "Created", "body_text": "{}"},
+    )
+    assert res["ok"] is True
+    assert all(t["passed"] for t in res["test_results"]), f"Sandbox test failed: {res['test_results']}"
+
+
+@pytest.mark.asyncio
+async def test_security_cors_host_and_path_restrictions(isolated_store: LocalStore) -> None:
+    """Verify CORS blocks external origins, TrustedHost blocks DNS rebinding, and file path traversal is rejected."""
+    import httpx
+    from backend.main import app
+    from backend.request_engine import execute_http_request
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        # 1. External origin must not receive permissive Access-Control-Allow-Origin
+        cors_evil = await client.get("/api/collections", headers={"Origin": "https://evil.example.com"})
+        assert cors_evil.headers.get("access-control-allow-origin") is None
+
+        # Localhost origin is allowed
+        cors_local = await client.get("/api/collections", headers={"Origin": "http://127.0.0.1:8000"})
+        assert cors_local.headers.get("access-control-allow-origin") == "http://127.0.0.1:8000"
+
+        # 2. Arbitrary file_path outside workspace over HTTP is rejected
+        bad_import = await client.post(
+            "/api/collections/import",
+            json={"file_path": "C:/Windows/win.ini"},
+        )
+        assert bad_import.status_code == 400
+
+    # 3. DNS rebinding / untrusted Host header is rejected with 400
+    async with httpx.AsyncClient(transport=transport, base_url="http://evil.rebind.attacker.com") as evil_client:
+        rebind_res = await evil_client.get("/api/health")
+        assert rebind_res.status_code == 400
+
+    # 4. Invalid collection_id with only traversal punctuation raises ValueError
+    with pytest.raises(ValueError, match="Invalid collection_id"):
+        isolated_store._collection_path("../../..")
+
+    # 5. Unsupported URL scheme (e.g. file://) is rejected in execute_http_request
+    scheme_res = await execute_http_request(method="GET", raw_url="file:///etc/passwd")
+    assert scheme_res["ok"] is False
+    assert "Unsupported or missing URL scheme" in scheme_res["error"]
+
+
+@pytest.mark.asyncio
+async def test_folder_and_collection_auth_inheritance_with_noauth_request(isolated_store: LocalStore) -> None:
+    """Verify requests with noauth inherit folder-level or collection-level authentication."""
+    col = isolated_store.save_collection(
+        {
+            "id": "auth-inherit-col",
+            "name": "Auth Inheritance Suite",
+            "auth": {"type": "bearer", "params": {"token": "col_level_token"}},
+            "folders": [
+                {
+                    "id": "fld-sec",
+                    "name": "FolderWithAuth",
+                    "folder_path": [],
+                    "auth": {"type": "bearer", "params": {"token": "folder_level_token"}},
+                }
+            ],
+            "requests": [
+                {
+                    "id": "req-in-folder",
+                    "name": "Folder Request",
+                    "method": "GET",
+                    "raw_url": "https://api.example.com/folder-resource",
+                    "folder_path": ["FolderWithAuth"],
+                    "auth": {"type": "noauth", "params": {}},
+                },
+                {
+                    "id": "req-at-root",
+                    "name": "Root Request",
+                    "method": "GET",
+                    "raw_url": "https://api.example.com/root-resource",
+                    "folder_path": [],
+                    "auth": {"type": "noauth", "params": {}},
+                },
+            ],
+        }
+    )
+
+    captured_auths: list[Any] = []
+
+    async def fake_execute(**kwargs: Any) -> dict[str, Any]:
+        captured_auths.append(kwargs.get("auth"))
+        return {
+            "ok": True,
+            "status_code": 200,
+            "reason_phrase": "OK",
+            "elapsed_ms": 5.0,
+            "size_bytes": 2,
+            "url": kwargs["raw_url"],
+            "headers": {},
+            "body_text": "{}",
+            "body_json": {},
+            "prepared_request": {"method": "GET", "url": kwargs["raw_url"]},
+        }
+
+    with patch("backend.mcp_server.execute_http_request", side_effect=fake_execute):
+        await mcp_server.run_collection(collection_id=col["id"])
+
+    assert captured_auths[0] == {"type": "bearer", "params": {"token": "folder_level_token"}}
+    assert captured_auths[1] == {"type": "bearer", "params": {"token": "col_level_token"}}
+
+
+
+
 
 
 

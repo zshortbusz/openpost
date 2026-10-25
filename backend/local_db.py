@@ -7,12 +7,13 @@ Provides zero-cloud, local-first storage for OpenPost:
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 import datetime as dt
 import json
 import sqlite3
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 from backend.collection_parser import (
     OPENPOST_COLLECTION_SCHEMA_V1,
@@ -36,13 +37,19 @@ class LocalStore:
         self.collections_dir.mkdir(parents=True, exist_ok=True)
         self._init_sqlite()
 
-    def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path)
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
+        conn = sqlite3.connect(self.db_path, timeout=10.0)
         conn.row_factory = sqlite3.Row
-        return conn
+        try:
+            with conn:
+                yield conn
+        finally:
+            conn.close()
 
     def _init_sqlite(self) -> None:
         with self._connect() as conn:
+            conn.execute("PRAGMA journal_mode=WAL;")
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS environments (
@@ -77,13 +84,18 @@ class LocalStore:
     # ------------------------------------------------------------------
 
     def _collection_path(self, collection_id: str) -> Path:
-        safe_id = "".join(c for c in collection_id if c.isalnum() or c in ("-", "_"))
+        safe_id = "".join(c for c in str(collection_id) if c.isalnum() or c in ("-", "_"))
+        if not safe_id:
+            raise ValueError(f"Invalid collection_id: {collection_id!r}")
         return self.collections_dir / f"{safe_id}.json"
 
     def save_collection(self, collection: ParsedCollection | dict[str, Any]) -> dict[str, Any]:
         col_dict = collection.to_dict() if isinstance(collection, ParsedCollection) else dict(collection)
-        if not col_dict.get("id"):
-            col_dict["id"] = str(uuid.uuid4())
+        raw_id = str(col_dict.get("id") or "")
+        safe_id = "".join(c for c in raw_id if c.isalnum() or c in ("-", "_"))
+        if not safe_id:
+            safe_id = str(uuid.uuid4())
+        col_dict["id"] = safe_id
         col_dict["schema"] = OPENPOST_COLLECTION_SCHEMA_V1
         col_dict.setdefault("name", "Untitled Collection")
         col_dict.setdefault("description", "")

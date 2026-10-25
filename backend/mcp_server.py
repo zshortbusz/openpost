@@ -52,6 +52,42 @@ def set_store(store: LocalStore) -> None:
     _store = store
 
 
+def _is_active_auth(auth: dict[str, Any] | None) -> bool:
+    """Return True if an auth block defines a non-noauth authentication scheme."""
+    return bool(isinstance(auth, dict) and auth.get("type") and str(auth.get("type")).lower() != "noauth")
+
+
+def _resolve_effective_auth(
+    target_req: dict[str, Any],
+    col: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """Resolve effective auth with precedence: Request > Folder (deepest to shallowest) > Collection."""
+    req_auth = target_req.get("auth")
+    if _is_active_auth(req_auth):
+        return req_auth
+
+    if col:
+        req_folder_path = list(target_req.get("folder_path") or [])
+        if req_folder_path and col.get("folders"):
+            folder_lookup: dict[tuple[str, ...], dict[str, Any]] = {}
+            for f in col.get("folders", []):
+                if isinstance(f, dict) and f.get("name"):
+                    f_full_path = tuple(list(f.get("folder_path") or []) + [str(f["name"])])
+                    folder_lookup[f_full_path] = f
+
+            for depth in range(len(req_folder_path), 0, -1):
+                prefix = tuple(req_folder_path[:depth])
+                folder_node = folder_lookup.get(prefix)
+                if folder_node and _is_active_auth(folder_node.get("auth")):
+                    return folder_node["auth"]
+
+        col_auth = col.get("auth")
+        if _is_active_auth(col_auth):
+            return col_auth
+
+    return req_auth
+
+
 # ============================================================================
 # 1. COLLECTION TOOLS
 # ============================================================================
@@ -65,7 +101,10 @@ def import_postman_collection(
     """Import a Postman Collection v2.1.0 or OpenPost native JSON from a local file path or raw JSON payload."""
     store = get_store()
     if file_path:
-        parsed = parse_postman_collection_file(file_path)
+        in_path = Path(file_path)
+        if in_path.suffix.lower() != ".json":
+            raise ValueError("Collection file path must have a .json extension.")
+        parsed = parse_postman_collection_file(in_path)
         saved = store.save_collection(parsed)
     elif collection_json is not None:
         raw = json.loads(collection_json) if isinstance(collection_json, str) else collection_json
@@ -96,6 +135,8 @@ def export_postman_collection(
 
     if output_path:
         out = Path(output_path)
+        if ".." in out.parts or out.suffix.lower() != ".json":
+            raise ValueError("Output path must be a valid .json file path without parent directory traversal ('..').")
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(json.dumps(exported, indent=2), encoding="utf-8")
         return {"status": "exported", "output_path": str(out), "collection": exported}
@@ -258,9 +299,18 @@ async def send_request(
     environment_id: str | None = None,
     override_variables: dict[str, str] | None = None,
     timeout_seconds: float = 30.0,
+    collection_id: str | None = None,
 ) -> dict[str, Any]:
     """Send an ad-hoc HTTP request (Scratch Pad mode), interpolate variables, and log to SQLite history."""
     store = get_store()
+    col_vars = []
+    col_auth = None
+    if collection_id:
+        col = store.get_collection(collection_id)
+        if col:
+            col_vars = col.get("variables", [])
+            col_auth = col.get("auth")
+
     env_vars = []
     if environment_id:
         env = store.get_environment(environment_id)
@@ -270,7 +320,9 @@ async def send_request(
                 for v in env.get("variables", [])
             ]
 
+    effective_auth = auth if (auth and auth.get("type", "noauth") != "noauth") else (col_auth or auth)
     merged_vars = build_variable_context(
+        collection_vars=col_vars,
         environment_vars=env_vars,
         override_vars=override_variables,
     )
@@ -280,7 +332,7 @@ async def send_request(
         headers=headers,
         query_params=query_params,
         body=body,
-        auth=auth,
+        auth=effective_auth,
         variables=merged_vars,
         timeout_seconds=timeout_seconds,
     )
@@ -296,6 +348,7 @@ async def send_request(
             "headers": result["headers"],
             "body_text": result["body_text"],
         },
+        collection_id=collection_id,
     )
     result["history_id"] = history_entry["id"]
     return result
@@ -308,6 +361,7 @@ async def run_collection_request(
     environment_id: str | None = None,
     override_variables: dict[str, str] | None = None,
     timeout_seconds: float = 30.0,
+    request_overrides: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Execute a specific saved request from a collection with full scope variable resolution."""
     store = get_store()
@@ -315,9 +369,15 @@ async def run_collection_request(
     if not col:
         raise KeyError(f"Collection not found: {collection_id}")
 
-    target_req = next((r for r in col.get("requests", []) if r.get("id") == request_id), None)
-    if not target_req:
+    saved_req = next((r for r in col.get("requests", []) if r.get("id") == request_id), None)
+    if not saved_req:
         raise KeyError(f"Request {request_id} not found in collection {collection_id}")
+
+    target_req = dict(saved_req)
+    if request_overrides:
+        for k, v in request_overrides.items():
+            if v is not None:
+                target_req[k] = v
 
     env_vars = []
     env_obj = None
@@ -329,8 +389,14 @@ async def run_collection_request(
                 for v in env_obj.get("variables", [])
             ]
 
-    current_env = {v["key"]: str(v["value"]) for v in env_vars}
-    current_col_vars = {v.get("key", ""): str(v.get("value", "")) for v in col.get("variables", [])}
+    current_env = {v["key"]: str(v["value"]) for v in env_vars if not v.get("disabled", False)}
+    current_col_vars = {
+        v.get("key", ""): str(v.get("value", ""))
+        for v in col.get("variables", [])
+        if not v.get("disabled", False) and v.get("key")
+    }
+    initial_env = dict(current_env)
+    initial_col_vars = dict(current_col_vars)
 
     # 1. Execute Pre-request Scripts
     prerequest_scripts = (
@@ -346,8 +412,8 @@ async def run_collection_request(
             collection_variables=current_col_vars,
         )
         if pr_res.get("ok"):
-            current_env.update(pr_res.get("updated_environment", {}))
-            current_col_vars.update(pr_res.get("updated_collection_variables", {}))
+            current_env = dict(pr_res.get("updated_environment", current_env))
+            current_col_vars = dict(pr_res.get("updated_collection_variables", current_col_vars))
 
     merged_vars = build_variable_context(
         collection_vars=[{"key": k, "value": v} for k, v in current_col_vars.items()],
@@ -361,7 +427,7 @@ async def run_collection_request(
         query_params=target_req.get("query_params", []),
         path_variables=target_req.get("path_variables"),
         body=target_req.get("body"),
-        auth=target_req.get("auth") or col.get("auth"),
+        auth=_resolve_effective_auth(target_req, col),
         variables=merged_vars,
         timeout_seconds=timeout_seconds,
     )
@@ -383,12 +449,27 @@ async def run_collection_request(
         )
         test_results.extend(t_res.get("test_results", []))
         if t_res.get("ok"):
-            current_env.update(t_res.get("updated_environment", {}))
-            current_col_vars.update(t_res.get("updated_collection_variables", {}))
+            current_env = dict(t_res.get("updated_environment", current_env))
+            current_col_vars = dict(t_res.get("updated_collection_variables", current_col_vars))
 
     result["test_results"] = test_results
-    if environment_id and env_obj and current_env:
-        store.save_environment(name=env_obj["name"], variables=current_env, env_id=environment_id)
+    if environment_id and env_obj and current_env != initial_env:
+        disabled_env_vars = [
+            v for v in env_obj.get("variables", []) if not v.get("enabled", True) and v.get("key") not in current_env
+        ]
+        updated_env_list = [
+            {"key": k, "value": v, "enabled": True} for k, v in current_env.items()
+        ] + disabled_env_vars
+        store.save_environment(name=env_obj["name"], variables=updated_env_list, env_id=environment_id)
+
+    if current_col_vars != initial_col_vars:
+        disabled_col_vars = [
+            v for v in col.get("variables", []) if v.get("disabled", False) and v.get("key") not in current_col_vars
+        ]
+        col["variables"] = [
+            {"key": k, "value": v, "type": "string", "disabled": False} for k, v in current_col_vars.items()
+        ] + disabled_col_vars
+        store.save_collection(col)
     history_entry = store.record_history(
         method=target_req.get("method", "GET"),
         url=result["url"],
@@ -491,7 +572,11 @@ async def execute_postman_script(
     if environment_id:
         env_obj = store.get_environment(environment_id)
         if env_obj:
-            env_vars = {v["key"]: str(v["value"]) for v in env_obj.get("variables", [])}
+            env_vars = {
+                v["key"]: str(v["value"])
+                for v in env_obj.get("variables", [])
+                if v.get("enabled", True) and v.get("key")
+            }
     if override_variables:
         env_vars.update(override_variables)
 

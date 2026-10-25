@@ -22,6 +22,7 @@ import random
 import re
 import string
 import time
+import urllib.parse
 import uuid
 from typing import Any
 
@@ -225,10 +226,19 @@ def prepare_http_request(
                 if rk:
                     final_params.append((rk, rv))
 
-    # Avoid duplicating query params if they are already identically present in `resolved_url`
+    # Merge inline URL query params with explicit query_params without dropping inline params or fragments
     if "?" in resolved_url and final_params:
-        base_part, _ = resolved_url.split("?", 1)
-        resolved_url = base_part
+        frag_part = ""
+        url_no_frag = resolved_url
+        if "#" in resolved_url:
+            url_no_frag, frag_part = resolved_url.split("#", 1)
+            frag_part = f"#{frag_part}"
+        base_part, inline_query = url_no_frag.split("?", 1)
+        inline_pairs = urllib.parse.parse_qsl(inline_query, keep_blank_values=True)
+        for ik, iv in reversed(inline_pairs):
+            if (ik, iv) not in final_params:
+                final_params.insert(0, (ik, iv))
+        resolved_url = f"{base_part}{frag_part}"
 
     # Inject Auth
     if auth and isinstance(auth, dict):
@@ -279,7 +289,16 @@ def prepare_http_request(
                     if ek:
                         form_data[ek] = ev
         elif mode == "graphql":
-            gql = interpolate_structure(body.get("graphql", {}), var_map, unresolved)
+            gql = dict(interpolate_structure(body.get("graphql", {}), var_map, unresolved) or {})
+            if isinstance(gql.get("variables"), str):
+                raw_vars = gql["variables"].strip()
+                if raw_vars:
+                    try:
+                        gql["variables"] = json.loads(raw_vars)
+                    except Exception:
+                        pass
+                else:
+                    gql["variables"] = {}
             content_bytes = json.dumps(gql).encode("utf-8")
             if not any(k.lower() == "content-type" for k in final_headers):
                 final_headers["Content-Type"] = "application/json"
@@ -306,6 +325,7 @@ async def execute_http_request(
     variables: dict[str, str] | None = None,
     timeout_seconds: float = 30.0,
     follow_redirects: bool = True,
+    verify_ssl: bool = True,
 ) -> dict[str, Any]:
     """Interpolate variables and dispatch an HTTP request using `httpx.AsyncClient`."""
     prepared = prepare_http_request(
@@ -321,10 +341,14 @@ async def execute_http_request(
 
     start_ns = time.perf_counter_ns()
     try:
+        parsed_url = urllib.parse.urlsplit(prepared["url"])
+        if parsed_url.scheme.lower() not in ("http", "https"):
+            raise ValueError(f"Unsupported or missing URL scheme in {prepared['url']!r}. Only http:// and https:// are allowed.")
+
         async with httpx.AsyncClient(
             timeout=timeout_seconds,
             follow_redirects=follow_redirects,
-            verify=False,
+            verify=verify_ssl,
         ) as client:
             kwargs: dict[str, Any] = {
                 "method": prepared["method"],
