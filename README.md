@@ -46,7 +46,6 @@ OpenPost was engineered from the ground up as a **strict clean-room implementati
 * **Zero Lifted Code, Strings, or Assets:**
   * **No Raw Strings:** Production engines contain zero decompiled Electron IPC channel names, internal event bus strings, or proprietary header protocols.
   * **Original Visual Identity:** All icons, SVG vectors, and UI styles are 100% custom-created. The branding features an indigo/slate monogram with lightning glyphs, containing zero Postman trademarks, logos, or astronaut imagery.
-  * **Zero Binary Contamination:** The repository contains no unpacked Electron ASAR archives, installer executables, or reverse-engineering memory dumps.
 * **Independent Execution Engines:**
   * **HTTP Engine:** Built entirely from first principles on Python's `httpx` with an original URL path and dynamic variable interpolation engine.
   * **Script Sandbox:** Clean-room JavaScript runner implementing standard `pm.*` and Chai-like assertions from scratch in vanilla Node.js stdio.
